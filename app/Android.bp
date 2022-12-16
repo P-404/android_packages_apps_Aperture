@@ -45,4 +45,9 @@ android_app {
     optimize: {
         proguard_flags_files: ["proguard-rules.pro"],
     },
+
+    aaptflags: [
+        "--rename-manifest-package",
+        "org.p404.aperture",
+    ],
 }
