@@ -65,6 +65,7 @@ import androidx.core.view.children
 import androidx.core.view.doOnLayout
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
 import coil.decode.VideoFrameDecoder
@@ -84,6 +85,7 @@ import org.lineageos.aperture.ui.LocationPermissionsDialog
 import org.lineageos.aperture.ui.PreviewBlurView
 import org.lineageos.aperture.ui.VerticalSlider
 import org.lineageos.aperture.utils.AssistantIntent
+import org.lineageos.aperture.utils.BroadcastUtils
 import org.lineageos.aperture.utils.Camera
 import org.lineageos.aperture.utils.CameraFacing
 import org.lineageos.aperture.utils.CameraManager
@@ -95,6 +97,7 @@ import org.lineageos.aperture.utils.FlashMode
 import org.lineageos.aperture.utils.Framerate
 import org.lineageos.aperture.utils.GoogleLensUtils
 import org.lineageos.aperture.utils.GridMode
+import org.lineageos.aperture.utils.MediaStoreUtils
 import org.lineageos.aperture.utils.MediaType
 import org.lineageos.aperture.utils.PermissionsUtils
 import org.lineageos.aperture.utils.Rotation
@@ -868,7 +871,9 @@ open class CameraActivity : AppCompatActivity() {
         val outputOptions = StorageUtils.getPhotoMediaStoreOutputOptions(
             contentResolver,
             ImageCapture.Metadata().apply {
-                location = this@CameraActivity.location
+                if (!singleCaptureMode) {
+                    location = this@CameraActivity.location
+                }
             },
             photoOutputStream
         )
@@ -899,6 +904,9 @@ open class CameraActivity : AppCompatActivity() {
                     if (!singleCaptureMode) {
                         sharedPreferences.lastSavedUri = output.savedUri
                         tookSomething = true
+                        output.savedUri?.let {
+                            BroadcastUtils.broadcastNewPicture(this@CameraActivity, it)
+                        }
                     } else {
                         output.savedUri?.let {
                             openCapturePreview(it, MediaType.PHOTO)
@@ -927,7 +935,10 @@ open class CameraActivity : AppCompatActivity() {
         cameraState = CameraState.PRE_RECORDING_VIDEO
 
         // Create output options object which contains file + metadata
-        val outputOptions = StorageUtils.getVideoMediaStoreOutputOptions(contentResolver, location)
+        val outputOptions = StorageUtils.getVideoMediaStoreOutputOptions(
+            contentResolver,
+            location.takeUnless { singleCaptureMode }
+        )
 
         // Play shutter sound
         val delayTime = if (cameraSoundsUtils.playStartVideoRecording()) 500L else 0L
@@ -983,6 +994,7 @@ open class CameraActivity : AppCompatActivity() {
                             if (!singleCaptureMode) {
                                 sharedPreferences.lastSavedUri = it.outputResults.outputUri
                                 tookSomething = true
+                                BroadcastUtils.broadcastNewVideo(this, it.outputResults.outputUri)
                             } else {
                                 openCapturePreview(it.outputResults.outputUri, MediaType.VIDEO)
                             }
@@ -1054,6 +1066,7 @@ open class CameraActivity : AppCompatActivity() {
                 if (!supportedVideoQualities.contains(sharedPreferences.videoQuality)) {
                     sharedPreferences.videoQuality = supportedVideoQualities.first()
                 }
+                cameraController.videoCaptureTargetQuality = null // FIXME: video preview restart
                 cameraController.videoCaptureTargetQuality = sharedPreferences.videoQuality
 
                 // Set proper video framerate
@@ -1626,7 +1639,9 @@ open class CameraActivity : AppCompatActivity() {
 
     private fun updateGalleryButton() {
         runOnUiThread {
-            val uri = sharedPreferences.lastSavedUri
+            val uri = sharedPreferences.lastSavedUri?.takeIf {
+                MediaStoreUtils.fileExists(this, it)
+            }
             val keyguardLocked = keyguardManager.isKeyguardLocked
             if (uri != null && (!keyguardLocked || tookSomething)) {
                 galleryButton.load(uri) {
@@ -1766,7 +1781,7 @@ open class CameraActivity : AppCompatActivity() {
 
         outputUri?.let {
             try {
-                contentResolver.openOutputStream(it).use { outputStream ->
+                contentResolver.openOutputStream(it, "wt").use { outputStream ->
                     when (input) {
                         is InputStream -> input.use {
                             input.copyTo(outputStream!!)
@@ -1861,7 +1876,24 @@ open class CameraActivity : AppCompatActivity() {
             secondaryTopBarLayout.getChildAt(0)
         )?.let { layout ->
             for (child in layout.children) {
-                Button::class.safeCast(child)?.smoothRotate(compensationValue)
+                Button::class.safeCast(child)?.let {
+                    it.smoothRotate(compensationValue)
+                    ValueAnimator.ofFloat(
+                        (it.layoutParams as ConstraintLayout.LayoutParams).verticalBias,
+                        when (screenRotation) {
+                            Rotation.ROTATION_0 -> 0.0f
+                            Rotation.ROTATION_180 -> 1.0f
+                            Rotation.ROTATION_90,
+                            Rotation.ROTATION_270 -> 0.5f
+                        }
+                    ).apply {
+                        addUpdateListener { anim ->
+                            it.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                                verticalBias = anim.animatedValue as Float
+                            }
+                        }
+                    }.start()
+                }
             }
         }
 
