@@ -51,13 +51,16 @@ android {
 }
 
 dependencies {
+    // Align versions of all Kotlin components
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
+
     implementation("androidx.core:core-ktx:1.10.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.exifinterface:exifinterface:1.3.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1")
     implementation("androidx.preference:preference:1.2.0")
-    implementation("com.google.android.material:material:1.10.0-alpha03")
+    implementation("com.google.android.material:material:1.9.0")
 
     // CameraX core library using the camera2 implementation
     val cameraxVersion = "1.3.0-alpha07"
@@ -159,7 +162,10 @@ tasks.register("generateBp") {
     File("${project.projectDir.absolutePath}/Android.bp").let { file ->
         // Read dependencies
         val dependencies = "${spaces(8)}// DO NOT EDIT THIS SECTION MANUALLY\n".plus(
-            configuration.allDependencies.joinToString("\n") {
+            configuration.allDependencies.filter {
+                // kotlin-bom does not need to be added to dependencies
+                it.group != "org.jetbrains.kotlin" && it.name != "kotlin-bom"
+            }.joinToString("\n") {
                 if (isAvailableInAosp(it.group!!, it.name)) {
                     "${spaces(8)}\"${moduleNameAosp("${it.group}:${it.name}")}\","
                 } else {
