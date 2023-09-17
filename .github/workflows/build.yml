@@ -8,15 +8,24 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v1
+      uses: actions/checkout@v3
 
-    - name: Setup JDK 11
-      uses: actions/setup-java@v1
+    - name: Setup JDK 17
+      uses: actions/setup-java@v3
       with:
-        java-version: 11
+        distribution: 'zulu'
+        java-version: 17
 
     - name: Build with Gradle
       run: ./gradlew assembleDebug
+
+    - name: Generate Android.bp
+      run: |
+        ./gradlew app:generateBp
+        if [[ ! -z $(git status -s) ]]; then
+          git status
+          exit -1
+        fi
 
     - uses: actions/upload-artifact@v3
       with:
